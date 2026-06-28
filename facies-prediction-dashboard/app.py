@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import io
+import os
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
@@ -14,6 +15,12 @@ st.set_page_config(page_title="Facies Predictor", layout="wide")
 
 @st.cache_resource
 def load_pipeline():
+    # Dynamically find the exact folder where app.py is currently running on the cloud server
+    base_path = os.path.dirname(__file__)
+
+    scaler_path = os.path.join(base_path, 'scaler.joblib')
+    model_path = os.path.join(base_path, 'best_baseline_rf.joblib')
+    
     scaler = joblib.load('scaler.joblib')
     model = joblib.load('best_baseline_rf.joblib')
     return scaler, model
@@ -21,7 +28,7 @@ def load_pipeline():
 
 try:
     scaler, model = load_pipeline()
-    st.sidebar.success("✓ Model & Scaler loaded successfully!")
+    st.sidebar.success("Model & Scaler loaded successfully!")
 except Exception as e:
     st.sidebar.error(f"Error loading model files: {e}")
     st.stop()
