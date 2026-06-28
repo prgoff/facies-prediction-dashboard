@@ -215,7 +215,6 @@ if uploaded_file is not None:
     # Push the completed figure cleanly to the web dashboard interface
     st.pyplot(fig)
 
-uploaded_file = st.file_uploader("Upload a LAS file")
 
 if uploaded_file is not None:
     # ... all your processing code ...
