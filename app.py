@@ -49,48 +49,51 @@ if uploaded_file is not None:
         st.error(f"Failed to parse LAS file: {e}")
         st.stop()
 
-    # Dynamic Column mapping and Validation
-    # --- 3. DYNAMIC COLUMN MAPPING & AUTOMATIC ALIASING ---
+    # Automatic dictionary mapping and notifications
     st.subheader("Dataset Verification & Processing")
     
-    # Define an industry-standard alias dictionary for common log names
+    # Comprehensive dictionary mapping standard features to all known vendor aliases
     curve_aliases = {
-        'GR': ['GR', 'GR_ED', 'GAM', 'CGR', 'SGR', 'GRD'],
-        'ILD_log10': ['ILD_LOG10', 'ILD', 'LL3', 'RT', 'AHT90', 'AT90', 'RILD'],
-        'DeltaPHI': ['DELTAPHI', 'DPHI', 'DEPT_PHI', 'DPHI_NPHI'],
-        'PHIND': ['PHIND', 'NPHI', 'PHIN', 'NPHI_HL', 'POROSITY'],
-        'PE': ['PE', 'PEF', 'PDPE', 'DEN_COR']
+        'GR': ['GR', 'GGCE', 'GR_ED', 'GAM', 'CGR', 'SGR', 'GRD'],
+        'ILD_log10': ['ILD_LOG10', 'RTAO', 'ILD', 'LL3', 'RT', 'AHT90', 'AT90', 'RILD'],
+        'DeltaPHI': ['DELTAPHI', 'DPHI', 'DPOR', 'DEPT_PHI', 'DPHI_NPHI'],
+        'PHIND': ['PHIND', 'XPOR', 'NPHI', 'PHIN', 'NPHI_HL', 'POROSITY'],
+        'PE': ['PE', 'PDPE', 'PEF', 'DEN_COR']
     }
     
     required_curves = ['GR', 'ILD_log10', 'DeltaPHI', 'PHIND', 'PE']
     mapped_columns = {}
-    
-    col_selectors = st.columns(len(required_curves))
-    
-    for idx, curve in enumerate(required_curves):
-        with col_selectors[idx]:
-            # Step 1: Try to automatically find a matching alias (case-insensitive)
-            detected_column = None
-            possible_aliases = curve_aliases[curve]
-            
-            for col in df_las.columns:
-                if col.upper() in [alias.upper() for alias in possible_aliases]:
-                    detected_column = col
-                    break
-            
-            # Step 2: Determine the default dropdown index position
-            if detected_column:
-                default_idx = df_las.columns.get_loc(detected_column)
-            else:
-                # Fallback to index 0 (Depth) if no alias matches
-                default_idx = 0
-            
-            # Step 3: Render the dropdown pre-selected to the auto-detected curve
-            mapped_columns[curve] = st.selectbox(
-                f"Map curve for {curve}:", 
-                df_las.columns, 
-                index=default_idx
-            )
+    auto_mapped_log = []
+
+    # Hidden Auto-Detection Logic
+    for curve in required_curves:
+        detected_column = None
+        for col in df_las.columns:
+            if col.upper() in [alias.upper() for alias in curve_aliases[curve]]:
+                detected_column = col
+                break
+        
+        # If detected, lock it in. If completely missing, default to first column.
+        mapped_columns[curve] = detected_column if detected_column else df_las.columns[0]
+        
+        if detected_column:
+            auto_mapped_log.append(f"{curve} → {detected_column}")
+
+    # Display a sleek notification banner just like your friend's app
+    if len(auto_mapped_log) == len(required_curves):
+        st.info(f"⚡ **Auto-mapped all curves successfully:** {', '.join(auto_mapped_log)}")
+    else:
+        st.warning("⚠️ Some curves could not be automatically matched. Please verify mappings below.")
+
+    # Hide the dropdown menus inside a clean, collapsible menu
+    with st.expander("⚙️ Advanced Curve Mapping Overrides"):
+        st.write("If the auto-detection missed a curve, correct it manually here:")
+        col_selectors = st.columns(len(required_curves))
+        for idx, curve in enumerate(required_curves):
+            with col_selectors[idx]:
+                current_default = mapped_columns[curve]
+                default_idx = df_las.columns.get_loc(current_default) if current_default in df_las.columns else 0
+                mapped_columns[curve] = st.selectbox(f"{curve}:", df_las.columns, index=default_idx)
             
     # Handle dataset-specific geological metadata targets (NM_M and RELPOS)
     # If missing from raw logs, generate standard baseline geologic assumptions
@@ -98,6 +101,12 @@ if uploaded_file is not None:
         df_las['NM_M'] = 1  # Default to non-marine environment proxy fallback
     if 'RELPOS' not in df_las.columns:
         df_las['RELPOS'] = 0.5  # Default to mid-formation coordinate positions
+        
+    # Failures and Warnings
+    # Check if any tool fell back to 'Depth' because it was missing from the file
+    for curve, mapped_col in mapped_columns.items():
+        if mapped_col in ['Depth', 'DEPT']:
+            st.sidebar.error(f"🚨 Missing Tool: This file does not contain a {curve} log. The app will use background averages, but model accuracy will decrease.")
 
     # Preprocessing Pipeline
     df_proc = pd.DataFrame()
@@ -148,38 +157,61 @@ if uploaded_file is not None:
     X_live_scaled = scaler.transform(X_live_raw)
     df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
 
-    # Render Log Visualization Track
-    st.subheader("Machine Learning Log Interpretation Log Strip")
+    # Plotting engine with advanced tracks toggle
+    st.subheader("Subsurface Facies Interpretation Model")
+    
+    # 1. Add the toggle switch to the sidebar
+    show_advanced = st.sidebar.checkbox("👁️ Show Advanced Engineering Tracks", value=False)
+    
+    # 2. Dynamically set up columns based on the toggle switch
+    if show_advanced:
+        fig, ax = plt.subplots(1, 5, figsize=(15, 10), sharey=True)
+        # Track 1: GR, Track 2: Resistivity, Track 3: NM_M, Track 4: RELPOS, Track 5: Facies
+        facies_track_idx = 4
+    else:
+        fig, ax = plt.subplots(1, 3, figsize=(11, 10), sharey=True)
+        # Track 1: GR, Track 2: Resistivity, Track 3: Facies
+        facies_track_idx = 2
 
-    facies_colors = ['#F4D03F', '#F5B041', '#DC7633', '#A11D33',
-                     '#1B4F72', '#2E4053', '#7D6608', '#117A65', '#145A32']
-    cmap_facies = colors.ListedColormap(facies_colors, 'indexed')
-
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(10, 8), sharey=True)
-
-    # Track 1: Gamma Ray
-    ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', lw=1.0)
+    # Invert Y-axis so depth goes down into the earth
+    ax[0].invert_yaxis()
+    
+    # Track 1: Gamma Ray (Standard)
+    ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', linewidth=1)
     ax[0].set_title("Gamma Ray (GR)")
     ax[0].set_xlabel("API")
     ax[0].grid(True, linestyle=':', alpha=0.5)
-
-    # Track 2: Resistivity
-    ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', lw=1.0)
+    
+    # Track 2: Deep Resistivity (Standard)
+    ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', linewidth=1)
     ax[1].set_title("Resistivity (ILD)")
     ax[1].set_xlabel("Log10 Ohmm")
     ax[1].grid(True, linestyle=':', alpha=0.5)
 
-    # Track 3: Predicted Facies Log Strip
-    pred_strip = np.repeat(
-        df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
-    ax[2].imshow(pred_strip, cmap=cmap_facies, aspect='auto',
-                 extent=[0, 20, df_proc['Depth'].max(), df_proc['Depth'].min()], vmin=1, vmax=9)
-    ax[2].set_title("Predicted Facies")
-    ax[2].set_xticks([])
+    # If the user checks the box, inject your friend's extra engineering tracks!
+    if show_advanced:
+        # Track 3: Marine vs Non-Marine indicator block
+        ax[2].plot(df_proc['NM_M'], df_proc['Depth'], color='purple', linewidth=1.5)
+        ax[2].set_title("Marine Block (NM_M)")
+        ax[2].set_xlabel("Code")
+        ax[2].grid(True, linestyle=':', alpha=0.5)
+        
+        # Track 4: Relative Position slope line
+        ax[3].plot(df_proc['RELPOS'], df_proc['Depth'], color='brown', linewidth=1)
+        ax[3].set_title("Rel Position (RELPOS)")
+        ax[3].set_xlabel("Slope Index")
+        ax[3].grid(True, linestyle=':', alpha=0.5)
 
-    # Globally invert Y-axis so depth values increase going downward
-    ax[0].invert_yaxis()
-    plt.tight_layout()
+    # Final Track: Your clean, superior multi-colored Facies Strip chart
+    # Create a vertical strip chart by repeating the 1D prediction array horizontally
+    cluster = np.repeat(np.expand_dims(y_pred, axis=1), 10, axis=1)
+    
+    # Adjust extent based on tracking configuration
+    ax[facies_track_idx].imshow(cluster, cmap='tab20', aspect='auto', 
+                                extent=[0, 10, df_proc['Depth'].max(), df_proc['Depth'].min()])
+    ax[facies_track_idx].set_title("Predicted Facies")
+    ax[facies_track_idx].set_xticks([]) # Hide arbitrary horizontal image numbers
 
-    # Display the static matplotlib image layout container within the web app interface
+    # Push the completed figure cleanly to the web dashboard interface
     st.pyplot(fig)
+    
