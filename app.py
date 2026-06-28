@@ -40,6 +40,10 @@ if uploaded_file is not None:
     try:
         las = lasio.read(str_io)
         df_las = las.df().reset_index()  # Extract curve data and make 'Depth' a column
+        
+        # Force whatever the first column is (the depth index) to be named 'Depth'
+        df_las.rename(columns={df_las.columns[0]: 'Depth'}, inplace=True)
+        
         st.success(f"✓ Successfully parsed: {uploaded_file.name}")
     except Exception as e:
         st.error(f"Failed to parse LAS file: {e}")
