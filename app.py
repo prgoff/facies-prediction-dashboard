@@ -157,6 +157,32 @@ if uploaded_file is not None:
     X_live_scaled = scaler.transform(X_live_raw)
     df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
 
+    # Automated AI evaluation scorecard
+    # Check if the uploaded file contains original geological core descriptions to test against
+    if 'FACIES' in df_las.columns:
+        st.markdown("---")
+        st.write("### 🏆 Automated AI Performance Scorecard")
+        
+        from sklearn.metrics import accuracy_score, classification_report
+        
+        # Strip out any missing missing rows from the original column for pristine math verification
+        true_labels = df_las['FACIES'].fillna(-1).astype(int)
+        valid_idx = true_labels != -1
+        
+        if valid_idx.sum() > 0:
+            acc = accuracy_score(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx])
+            
+            # Display metrics across a dynamic row layout metric container block
+            m1, m2 = st.columns(2)
+            with m1:
+                st.metric(label="🎯 Overall Model Alignment Accuracy", value=f"{acc:.1%}")
+            with m2:
+                st.metric(label="📈 Validated Depth Samples Evaluated", value=f"{valid_idx.sum()} intervals")
+                
+            with st.expander("📊 View Detailed Granular Precision Report"):
+                report = classification_report(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx], output_dict=False)
+                st.code(report)
+
     # Dynamic log visualisation tracks
     st.subheader("Machine Learning Log Interpretation Log Strip")
     
@@ -220,7 +246,7 @@ if uploaded_file is not None:
 
     # Download predictions as csv
     st.markdown("---")
-    st.write("### 💾 Export Interpretation Results")
+    st.write("### Export Interpretation Results")
     st.write("Download the processed well log data along with your model's continuous facies predictions as a standard CSV spreadsheet.")
 
     @st.cache_data
@@ -230,36 +256,47 @@ if uploaded_file is not None:
     csv_bytes = convert_df_to_csv(df_proc)
 
     st.download_button(
-        label="📥 Download Facies Predictions (.csv)",
+        label=" Download Facies Predictions (.csv)",
         data=csv_bytes,
         file_name=f"Facies_Predictions_{uploaded_file.name.replace('.las', '')}.csv",
         mime="text/csv",
         key='download-csv'
     )
 
-    # Geological crossplot analysis
+    # Interactive Geological Crossplot
     st.markdown("---")
-    st.write("### 📊 Facies Crossplot Clustering")
-    st.write("Examine the machine learning model's partitions. This graph plots Gamma Ray directly against Resistivity, with every depth point colored by its predicted facies classification.")
+    st.write("### 📊 Interactive Facies Crossplot Clustering")
+    st.write("Hover over any data point to inspect its exact logging metrics and depth location in real time.")
 
-    fig_cross, ax_cross = plt.subplots(figsize=(8, 5))
-    scatter = ax_cross.scatter(
-        df_proc['GR'], 
-        df_proc['ILD_log10'], 
-        c=df_proc['Predicted_Facies'], 
-        cmap=cmap_facies, 
-        alpha=0.7, 
-        edgecolors='none',
-        vmin=1,
-        vmax=9
+    import plotly.express as px
+
+    # Create a descriptive text column specifically for the interactive hover popup box
+    df_proc['Hover_Text'] = (
+        "Depth: " + df_proc['Depth'].astype(str) + " ft<br>" +
+        "Gamma Ray: " + df_proc['GR'].round(1).astype(str) + " API<br>" +
+        "Resistivity: " + df_proc['ILD_log10'].round(2).astype(str) + " Log10"
     )
-    
-    ax_cross.set_xlabel("Gamma Ray (GR) - API Units")
-    ax_cross.set_ylabel("Resistivity (ILD) - Log10 Ohm-m")
-    ax_cross.set_title("AI Decision Domains: GR vs. Resistivity")
-    ax_cross.grid(True, linestyle=':', alpha=0.5)
-    
-    cbar = fig_cross.colorbar(scatter, ax=ax_cross, ticks=range(1, 10))
-    cbar.set_label('Predicted Facies ID Number')
-    
-    st.pyplot(fig_cross)
+
+    # Build the interactive dynamic scatter plot engine
+    fig_cross = px.scatter(
+        df_proc,
+        x='GR',
+        y='ILD_log10',
+        color='Predicted_Facies',
+        hover_name='Hover_Text',
+        color_continuous_scale=facies_colors,
+        range_color=[1, 9],
+        labels={'GR': 'Gamma Ray (API)', 'ILD_log10': 'Resistivity (Log10 Ohmm)'},
+        title="Interactive Decision Domains: GR vs. Resistivity"
+    )
+
+    # Clean up layout dimensions and structure
+    fig_cross.update_layout(
+        coloraxis_colorbar=dict(title="Facies ID", tickvals=list(range(1, 10))),
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
+        yaxis=dict(gridcolor='rgba(128,128,128,0.2)')
+    )
+
+    # Render natively in Streamlit
+    st.plotly_chart(fig_cross, use_container_width=True)
