@@ -106,7 +106,7 @@ if uploaded_file is not None:
     # Check if any tool fell back to 'Depth' because it was missing from the file
     for curve, mapped_col in mapped_columns.items():
         if mapped_col in ['Depth', 'DEPT']:
-            st.sidebar.error(f"🚨 Missing Tool: This file does not contain a {curve} log. The app will use background averages, but model accuracy will decrease.")
+            st.sidebar.error(f" Missing Tool: This file does not contain a {curve} log. The app will use background averages, but model accuracy will decrease.")
 
     # Preprocessing Pipeline
     df_proc = pd.DataFrame()
@@ -175,11 +175,11 @@ if uploaded_file is not None:
             # Display metrics across a dynamic row layout metric container block
             m1, m2 = st.columns(2)
             with m1:
-                st.metric(label="🎯 Overall Model Alignment Accuracy", value=f"{acc:.1%}")
+                st.metric(label=" Overall Model Alignment Accuracy", value=f"{acc:.1%}")
             with m2:
-                st.metric(label="📈 Validated Depth Samples Evaluated", value=f"{valid_idx.sum()} intervals")
+                st.metric(label=" Validated Depth Samples Evaluated", value=f"{valid_idx.sum()} intervals")
                 
-            with st.expander("📊 View Detailed Granular Precision Report"):
+            with st.expander(" View Detailed Granular Precision Report"):
                 report = classification_report(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx], output_dict=False)
                 st.code(report)
 
@@ -265,7 +265,7 @@ if uploaded_file is not None:
 
     # Interactive Geological Crossplot
     st.markdown("---")
-    st.write("### 📊 Interactive Facies Crossplot Clustering")
+    st.write("###  Interactive Facies Crossplot Clustering")
     st.write("Hover over any data point to inspect its exact logging metrics and depth location in real time.")
 
     import plotly.express as px
