@@ -157,53 +157,57 @@ if uploaded_file is not None:
     X_live_scaled = scaler.transform(X_live_raw)
     df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
 
-    # Plotting engine with advanced tracks toggle
-    st.subheader("Subsurface Facies Interpretation Model")
+    # Dynamic log visualisation tracks
+    st.subheader("Machine Learning Log Interpretation Log Strip")
     
     # 1. Add the toggle switch to the sidebar
     show_advanced = st.sidebar.checkbox("👁️ Show Advanced Engineering Tracks", value=False)
     
-    # 2. Dynamically set up columns based on the toggle switch
+    # 2. Configure your custom color palette definitions
+    facies_colors = ['#F4D03F', '#F5B041', '#DC7633', '#A11D33',
+                     '#1B4F72', '#2E4053', '#7D6608', '#117A65', '#145A32']
+    cmap_facies = colors.ListedColormap(facies_colors, 'indexed')
+
+    # 3. Dynamically configure subplots based on the user's sidebar selection
     if show_advanced:
-        fig, ax = plt.subplots(1, 5, figsize=(15, 10), sharey=True)
-        # Track 1: GR, Track 2: Resistivity, Track 3: NM_M, Track 4: RELPOS, Track 5: Facies
+        fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 10), sharey=True)
         facies_track_idx = 4
     else:
-        fig, ax = plt.subplots(1, 3, figsize=(11, 10), sharey=True)
-        # Track 1: GR, Track 2: Resistivity, Track 3: Facies
+        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(11, 8), sharey=True)
         facies_track_idx = 2
 
-    # Invert Y-axis so depth goes down into the earth
+    # Invert Y-axis globally on the first track so depth values increase downward
     ax[0].invert_yaxis()
     
     # Track 1: Gamma Ray (Standard)
-    ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', linewidth=1)
+    ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', lw=1.0)
     ax[0].set_title("Gamma Ray (GR)")
     ax[0].set_xlabel("API")
     ax[0].grid(True, linestyle=':', alpha=0.5)
     
     # Track 2: Deep Resistivity (Standard)
-    ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', linewidth=1)
+    ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', lw=1.0)
     ax[1].set_title("Resistivity (ILD)")
     ax[1].set_xlabel("Log10 Ohmm")
     ax[1].grid(True, linestyle=':', alpha=0.5)
 
-    # If the user checks the box, inject your friend's extra engineering tracks!
+    # 4. Inject extra engineering tracks matching your friend's app if active
     if show_advanced:
-        # Track 3: Marine vs Non-Marine indicator block
-        ax[2].plot(df_proc['NM_M'], df_proc['Depth'], color='purple', linewidth=1.5)
+        nm_m_data = df_las['NM_M'] if 'NM_M' in df_las.columns else np.ones(len(df_proc))
+        relpos_data = df_las['RELPOS'] if 'RELPOS' in df_las.columns else np.linspace(0, 1, len(df_proc))
+        
+        # Track 3: Marine vs Non-Marine block line
+        ax[2].plot(nm_m_data, df_proc['Depth'], color='purple', lw=1.5)
         ax[2].set_title("Marine Block (NM_M)")
         ax[2].set_xlabel("Code")
         ax[2].grid(True, linestyle=':', alpha=0.5)
         
-        # Track 4: Relative Position slope line
-        ax[3].plot(df_proc['RELPOS'], df_proc['Depth'], color='brown', linewidth=1)
+        # Track 4: Relative Position index slope
+        ax[3].plot(relpos_data, df_proc['Depth'], color='brown', lw=1.0)
         ax[3].set_title("Rel Position (RELPOS)")
         ax[3].set_xlabel("Slope Index")
         ax[3].grid(True, linestyle=':', alpha=0.5)
 
-    # Final Track: Your clean, superior multi-colored Facies Strip chart
-    # Create a vertical strip chart by repeating the 1D prediction array horizontally
     # Final Track: Your clean multi-colored structural Facies Strip
     pred_strip = np.repeat(df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
     ax[facies_track_idx].imshow(pred_strip, cmap=cmap_facies, aspect='auto', 
@@ -214,7 +218,7 @@ if uploaded_file is not None:
     plt.tight_layout()
     st.pyplot(fig)
 
-    # --- DOWNLOAD PREDICTIONS AS CSV ---
+    # Download predictions as csv
     st.markdown("---")
     st.write("### 💾 Export Interpretation Results")
     st.write("Download the processed well log data along with your model's continuous facies predictions as a standard CSV spreadsheet.")
@@ -233,7 +237,7 @@ if uploaded_file is not None:
         key='download-csv'
     )
 
-    # --- CROSSPLOT ANALYSIS ---
+    # Geological crossplot analysis
     st.markdown("---")
     st.write("### 📊 Facies Crossplot Clustering")
     st.write("Examine the machine learning model's partitions. This graph plots Gamma Ray directly against Resistivity, with every depth point colored by its predicted facies classification.")
@@ -259,4 +263,3 @@ if uploaded_file is not None:
     cbar.set_label('Predicted Facies ID Number')
     
     st.pyplot(fig_cross)
-    
