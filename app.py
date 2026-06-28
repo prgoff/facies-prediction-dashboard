@@ -187,7 +187,7 @@ if uploaded_file is not None:
     st.subheader("Machine Learning Log Interpretation Log Strip")
     
     # 1. Add the toggle switch to the sidebar
-    show_advanced = st.sidebar.checkbox("👁️ Show Advanced Engineering Tracks", value=False)
+    show_advanced = st.sidebar.checkbox(" Show Advanced Engineering Tracks", value=False)
     
     # 2. Configure your custom color palette definitions
     facies_colors = ['#F4D03F', '#F5B041', '#DC7633', '#A11D33',
