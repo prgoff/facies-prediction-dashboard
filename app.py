@@ -81,7 +81,7 @@ if uploaded_file is not None:
 
     # Display a sleek notification banner just like your friend's app
     if len(auto_mapped_log) == len(required_curves):
-        st.info(f"⚡ **Auto-mapped all curves successfully:** {', '.join(auto_mapped_log)}")
+        st.info(f"**Auto-mapped all curves successfully:** {', '.join(auto_mapped_log)}")
     else:
         st.warning("⚠️ Some curves could not be automatically matched. Please verify mappings below.")
 
@@ -204,7 +204,7 @@ if uploaded_file is not None:
 
     # Final Track: Your clean, superior multi-colored Facies Strip chart
     # Create a vertical strip chart by repeating the 1D prediction array horizontally
-    cluster = np.repeat(np.expand_dims(y_pred, axis=1), 10, axis=1)
+    pred_strip = np.repeat(df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
     
     # Adjust extent based on tracking configuration
     ax[facies_track_idx].imshow(cluster, cmap='tab20', aspect='auto', 
@@ -214,4 +214,16 @@ if uploaded_file is not None:
 
     # Push the completed figure cleanly to the web dashboard interface
     st.pyplot(fig)
+
+uploaded_file = st.file_uploader("Upload a LAS file")
+
+if uploaded_file is not None:
+    # ... all your processing code ...
+    # ... your plotting code ...
+    st.pyplot(fig)
+    
+    # MAKE SURE THIS NEW DOWNLOAD CODE IS INDENTED INSIDE THE "IF" BLOCK TOO:
+    st.markdown("---")
+    st.write("### 💾 Export Interpretation Results")
+    # ... rest of the download code ...
     
