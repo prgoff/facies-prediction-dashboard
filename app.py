@@ -204,25 +204,59 @@ if uploaded_file is not None:
 
     # Final Track: Your clean, superior multi-colored Facies Strip chart
     # Create a vertical strip chart by repeating the 1D prediction array horizontally
+    # Final Track: Your clean multi-colored structural Facies Strip
     pred_strip = np.repeat(df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
-    
-    # Adjust extent based on tracking configuration
-    ax[facies_track_idx].imshow(cluster, cmap='tab20', aspect='auto', 
-                                extent=[0, 10, df_proc['Depth'].max(), df_proc['Depth'].min()])
+    ax[facies_track_idx].imshow(pred_strip, cmap=cmap_facies, aspect='auto', 
+                                extent=[0, 20, df_proc['Depth'].max(), df_proc['Depth'].min()], vmin=1, vmax=9)
     ax[facies_track_idx].set_title("Predicted Facies")
-    ax[facies_track_idx].set_xticks([]) # Hide arbitrary horizontal image numbers
+    ax[facies_track_idx].set_xticks([])
 
-    # Push the completed figure cleanly to the web dashboard interface
+    plt.tight_layout()
     st.pyplot(fig)
 
-
-if uploaded_file is not None:
-    # ... all your processing code ...
-    # ... your plotting code ...
-    st.pyplot(fig)
-    
-    # MAKE SURE THIS NEW DOWNLOAD CODE IS INDENTED INSIDE THE "IF" BLOCK TOO:
+    # --- DOWNLOAD PREDICTIONS AS CSV ---
     st.markdown("---")
     st.write("### 💾 Export Interpretation Results")
-    # ... rest of the download code ...
+    st.write("Download the processed well log data along with your model's continuous facies predictions as a standard CSV spreadsheet.")
+
+    @st.cache_data
+    def convert_df_to_csv(df):
+        return df.to_csv(index=False).encode('utf-8')
+
+    csv_bytes = convert_df_to_csv(df_proc)
+
+    st.download_button(
+        label="📥 Download Facies Predictions (.csv)",
+        data=csv_bytes,
+        file_name=f"Facies_Predictions_{uploaded_file.name.replace('.las', '')}.csv",
+        mime="text/csv",
+        key='download-csv'
+    )
+
+    # --- CROSSPLOT ANALYSIS ---
+    st.markdown("---")
+    st.write("### 📊 Facies Crossplot Clustering")
+    st.write("Examine the machine learning model's partitions. This graph plots Gamma Ray directly against Resistivity, with every depth point colored by its predicted facies classification.")
+
+    fig_cross, ax_cross = plt.subplots(figsize=(8, 5))
+    scatter = ax_cross.scatter(
+        df_proc['GR'], 
+        df_proc['ILD_log10'], 
+        c=df_proc['Predicted_Facies'], 
+        cmap=cmap_facies, 
+        alpha=0.7, 
+        edgecolors='none',
+        vmin=1,
+        vmax=9
+    )
+    
+    ax_cross.set_xlabel("Gamma Ray (GR) - API Units")
+    ax_cross.set_ylabel("Resistivity (ILD) - Log10 Ohm-m")
+    ax_cross.set_title("AI Decision Domains: GR vs. Resistivity")
+    ax_cross.grid(True, linestyle=':', alpha=0.5)
+    
+    cbar = fig_cross.colorbar(scatter, ax=ax_cross, ticks=range(1, 10))
+    cbar.set_label('Predicted Facies ID Number')
+    
+    st.pyplot(fig_cross)
     
