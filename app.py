@@ -6,6 +6,8 @@ import joblib
 import io
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
+import plotly.express as px
+from sklearn.metrics import accuracy_score, classification_report
 
 st.set_page_config(page_title="Facies Predictor", layout="wide")
 
@@ -22,7 +24,8 @@ def load_all_models():
         xgb_model = None
         
     try:
-        cnn_model = joblib.load('best_1d_cnn.joblib') # Use keras.models.load_model if saved as .h5
+        from tensorflow.keras.models import load_model
+        cnn_model = load_model('best_1d_cnn.h5')
     except Exception:
         cnn_model = None
         
@@ -47,334 +50,292 @@ def create_live_sequences(scaled_data, window_size=5):
 
 # App User Interface
 st.title("Subsurface Facies Prediction Dashboard")
-st.markdown("Upload a standard `.las` well log file to generate automated machine learning lithofacies classifications.")
+st.markdown("Upload one or multiple standard `.las` well log files to generate automated machine learning lithofacies classifications.")
+
+# Global Configuration Sidebar
+st.sidebar.write("### ⚙️ Global App Configurations")
+selected_model = st.sidebar.selectbox(
+    "Choose Interpretation Architecture:",
+    ["Random Forest Baseline", "XGBoost Classifier", "Sequential 1D-CNN Architecture"]
+)
+show_advanced = st.sidebar.checkbox(" Show Advanced Engineering Tracks", value=False)
 
 uploaded_files = st.file_uploader("Upload one or multiple well log (.las) files", type=["las"], accept_multiple_files=True)
 
-if uploaded_file is not None:
-    # Read LAS file from memory buffer
-    bytes_data = uploaded_file.read()
-    str_io = io.StringIO(bytes_data.decode('utf-8', errors='ignore'))
-
-    try:
-        las = lasio.read(str_io)
-        df_las = las.df().reset_index()  # Extract curve data and make 'Depth' a column
-        
-        # Force whatever the first column is (the depth index) to be named 'Depth'
-        df_las.rename(columns={df_las.columns[0]: 'Depth'}, inplace=True)
-        
-        st.success(f"✓ Successfully parsed: {uploaded_file.name}")
-    except Exception as e:
-        st.error(f"Failed to parse LAS file: {e}")
-        st.stop()
-
-    # Automatic dictionary mapping and notifications
-    st.subheader("Dataset Verification & Processing")
+if uploaded_files:
+    # Build clean interface tabs dynamically for each well log uploaded
+    well_tabs = st.tabs([f"📄 {f.name}" for f in uploaded_files])
     
-    # Comprehensive dictionary mapping standard features to all known vendor aliases
-    curve_aliases = {
-        'GR': ['GR', 'GGCE', 'GR_ED', 'GAM', 'CGR', 'SGR', 'GRD'],
-        'ILD_log10': ['ILD_LOG10', 'RTAO', 'ILD', 'LL3', 'RT', 'AHT90', 'AT90', 'RILD'],
-        'DeltaPHI': ['DELTAPHI', 'DPHI', 'DPOR', 'DEPT_PHI', 'DPHI_NPHI'],
-        'PHIND': ['PHIND', 'XPOR', 'NPHI', 'PHIN', 'NPHI_HL', 'POROSITY'],
-        'PE': ['PE', 'PDPE', 'PEF', 'DEN_COR']
-    }
-    
-    required_curves = ['GR', 'ILD_log10', 'DeltaPHI', 'PHIND', 'PE']
-    mapped_columns = {}
-    auto_mapped_log = []
+    for tab_idx, uploaded_file in enumerate(uploaded_files):
+        with well_tabs[tab_idx]:
+            # Read LAS file from memory buffer
+            bytes_data = uploaded_file.read()
+            str_io = io.StringIO(bytes_data.decode('utf-8', errors='ignore'))
 
-    # Hidden Auto-Detection Logic
-    for curve in required_curves:
-        detected_column = None
-        for col in df_las.columns:
-            if col.upper() in [alias.upper() for alias in curve_aliases[curve]]:
-                detected_column = col
-                break
-        
-        # If detected, lock it in. If completely missing, default to first column.
-        mapped_columns[curve] = detected_column if detected_column else df_las.columns[0]
-        
-        if detected_column:
-            auto_mapped_log.append(f"{curve} → {detected_column}")
-
-    # Display a sleek notification banner just like your friend's app
-    if len(auto_mapped_log) == len(required_curves):
-        st.info(f"**Auto-mapped all curves successfully:** {', '.join(auto_mapped_log)}")
-    else:
-        st.warning("⚠️ Some curves could not be automatically matched. Please verify mappings below.")
-
-    # Hide the dropdown menus inside a clean, collapsible menu
-    with st.expander("Advanced Curve Mapping Overrides"):
-        st.write("If the auto-detection missed a curve, correct it manually here:")
-        col_selectors = st.columns(len(required_curves))
-        for idx, curve in enumerate(required_curves):
-            with col_selectors[idx]:
-                current_default = mapped_columns[curve]
-                default_idx = df_las.columns.get_loc(current_default) if current_default in df_las.columns else 0
-                mapped_columns[curve] = st.selectbox(f"{curve}:", df_las.columns, index=default_idx)
-            
-    # Handle dataset-specific geological metadata targets (NM_M and RELPOS)
-    # If missing from raw logs, generate standard baseline geologic assumptions
-    if 'NM_M' not in df_las.columns:
-        df_las['NM_M'] = 1  # Default to non-marine environment proxy fallback
-    if 'RELPOS' not in df_las.columns:
-        df_las['RELPOS'] = 0.5  # Default to mid-formation coordinate positions
-        
-    # Failures and Warnings
-    # Check if any tool fell back to 'Depth' because it was missing from the file
-    for curve, mapped_col in mapped_columns.items():
-        if mapped_col in ['Depth', 'DEPT']:
-            st.sidebar.error(f" Missing Tool: This file does not contain a {curve} log. The app will use background averages, but model accuracy will decrease.")
-
-    # Preprocessing Pipeline
-    df_proc = pd.DataFrame()
-    df_proc['Depth'] = df_las['Depth']
-    
-    # Map selection inputs back to pipeline arrays safely
-    for curve in required_curves:
-        # Force the column to be strictly numeric. Convert any rogue text strings into NaNs safely.
-        raw_series = pd.to_numeric(df_las[mapped_columns[curve]], errors='coerce')
-        df_proc[curve] = raw_series
-        
-    # Check if the user passed raw resistivity numbers by checking the data median.
-    # Log10 resistivity rarely exceeds 3.5, whereas raw resistivity values regularly go past 10.
-    if df_proc['ILD_log10'].median() > 5.0:
-        # Prevent taking the log of zero or negative numbers by clipping at a small positive floor
-        df_proc['ILD_log10'] = np.log10(df_proc['ILD_log10'].clip(lower=0.001))
-
-    # Bring in fallback targets
-    df_proc['NM_M'] = df_las['NM_M'] if 'NM_M' in df_las.columns else 1
-    df_proc['RELPOS'] = df_las['RELPOS'] if 'RELPOS' in df_las.columns else 0.5
-    
-    # If a tool failed or has missing rows, fill them cleanly using column medians
-    for col in required_curves:
-        df_proc[col] = df_proc[col].fillna(df_proc[col].median())
-        
-    df_proc['GR_PHIND_ratio'] = df_proc['GR'] / (df_proc['PHIND'] + 0.001)
-    
-    # Replace any rogue infinite math calculations with standard NaN markers, then fill them
-    df_proc.replace([np.inf, -np.inf], np.nan, inplace=True)
-    df_proc['GR_PHIND_ratio'] = df_proc['GR_PHIND_ratio'].fillna(df_proc['GR_PHIND_ratio'].median())
-
-    # Generate rolling windows sequentially
-    for curve in required_curves:
-        df_proc[f'{curve}_roll_mean'] = df_proc[curve].rolling(window=3, min_periods=1).mean()
-        df_proc[f'{curve}_roll_std'] = df_proc[curve].rolling(window=3, min_periods=1).std().fillna(0)
-
-    # Order columns exactly matching training phase features layout
-    features_ordered = [
-        'GR', 'ILD_log10', 'DeltaPHI', 'PHIND', 'PE', 'NM_M', 'RELPOS',
-        'GR_PHIND_ratio', 'GR_roll_mean', 'GR_roll_std', 'ILD_log10_roll_mean',
-        'ILD_log10_roll_std', 'DeltaPHI_roll_mean', 'DeltaPHI_roll_std',
-        'PHIND_roll_mean', 'PHIND_roll_std', 'PE_roll_mean', 'PE_roll_std'
-    ]
-    
-    X_live_raw = df_proc[features_ordered]
-
-    # Model selection sidebar workspace
-    st.sidebar.markdown("---")
-    st.sidebar.write("### Machine Learning Engine")
-    selected_model = st.sidebar.selectbox(
-        "Choose Interpretation Architecture:",
-        ["Random Forest Baseline", "XGBoost Classifier", "Sequential 1D-CNN Architecture"]
-    )
-
-    # Scale and Prepare Live Tensors
-    X_live_scaled = scaler.transform(X_live_raw)
-    
-    # Dyanmic Model Selector Routing
-    if selected_model == "Random Forest Baseline":
-        # Changed 'model' to 'rf_model' to match your loading configuration
-        df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
-        
-    elif selected_model == "XGBoost Classifier":
-        try:
-            xgb_engine = joblib.load('best_baseline_xgb.joblib')
-            df_proc['Predicted_Facies'] = xgb_engine.predict(X_live_scaled)
-        except Exception:
-            st.sidebar.warning("⚠️ XGBoost asset not found in repo yet. Falling back to Random Forest.")
-            # Changed fallback from 'model' to 'rf_model'
-            df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
-            
-    elif selected_model == "Sequential 1D-CNN Architecture":
-        try:
-            # Load the native deep learning model matrix architecture
-            from tensorflow.keras.models import load_model
-            cnn_engine = load_model('best_1d_cnn.h5')
-            
-            # 1. Transform the 2D scaled live frame into a 3D tensor sequence block
-            X_live_seq = create_live_sequences(X_live_scaled, window_size=5)
-            
-            # 2. Run sequential categorical inference
-            cnn_probs = cnn_engine.predict(X_live_seq)
-            
-            # 3. Extract highest probability class and map it back from 0-8 to 1-9 scales
-            df_proc['Predicted_Facies'] = np.argmax(cnn_probs, axis=1) + 1
-            
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ 1D-CNN asset not found or architecture error: {e}. Falling back to Random Forest.")
-            df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
-            
-    # Automated AI evaluation scorecard
-    # Check if the uploaded file contains original geological core descriptions to test against
-    if 'FACIES' in df_las.columns:
-        st.markdown("---")
-        st.write("### Automated AI Performance Scorecard")
-        
-        from sklearn.metrics import accuracy_score, classification_report
-        
-        # Strip out any missing missing rows from the original column for pristine math verification
-        true_labels = df_las['FACIES'].fillna(-1).astype(int)
-        valid_idx = true_labels != -1
-        
-        if valid_idx.sum() > 0:
-            acc = accuracy_score(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx])
-            
-            # Display metrics across a dynamic row layout metric container block
-            m1, m2 = st.columns(2)
-            with m1:
-                st.metric(label=" Overall Model Alignment Accuracy", value=f"{acc:.1%}")
-            with m2:
-                st.metric(label=" Validated Depth Samples Evaluated", value=f"{valid_idx.sum()} intervals")
+            try:
+                las = lasio.read(str_io)
+                df_las = las.df().reset_index()  # Extract curve data and make 'Depth' a column
                 
-            with st.expander(" View Detailed Granular Precision Report"):
-                report = classification_report(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx], output_dict=False)
-                st.code(report)
+                # Force whatever the first column is (the depth index) to be named 'Depth'
+                df_las.rename(columns={df_las.columns[0]: 'Depth'}, inplace=True)
+                
+                st.success(f"✓ Successfully parsed: {uploaded_file.name}")
+            except Exception as e:
+                st.error(f"Failed to parse LAS file {uploaded_file.name}: {e}")
+                continue
 
-    # Dynamic log visualisation tracks
-    st.subheader("Machine Learning Log Interpretation Log Strip")
-    
-    # 1. Add the toggle switch to the sidebar
-    show_advanced = st.sidebar.checkbox(" Show Advanced Engineering Tracks", value=False)
-    
-    # 2. Configure your custom color palette definitions
-    facies_colors = ['#F4D03F', '#F5B041', '#DC7633', '#A11D33',
-                     '#1B4F72', '#2E4053', '#7D6608', '#117A65', '#145A32']
-    cmap_facies = colors.ListedColormap(facies_colors, 'indexed')
+            # Automatic dictionary mapping and notifications
+            st.subheader("Dataset Verification & Processing")
+            
+            # Comprehensive dictionary mapping standard features to all known vendor aliases
+            curve_aliases = {
+                'GR': [
+                    'GR', 'GGCE', 'GR_ED', 'GAM', 'CGR', 'SGR', 'GRD', 'GR_S', 
+                    'ECGR', 'NGAM', 'HGR', 'EDTC_GR', 'GRS', 'GRMAIN', 'GGR', 'GAMMA'
+                ],
+                'ILD_log10': [
+                    'ILD_LOG10', 'RTAO', 'ILD', 'LL3', 'RT', 'AHT90', 'AT90', 'RILD', 
+                    'RLA5', 'RD', 'RDEEP', 'RESDEEP', 'HILD', 'RT90', 'M2R9', 'HDIL'
+                ],
+                'DeltaPHI': [
+                    'DELTAPHI', 'DPHI', 'DPOR', 'DEPT_PHI', 'DPHI_NPHI', 'DPH', 
+                    'DPHZ', 'POR_DENS', 'DPOR_SAN', 'DPOR_LIM', 'DPHZ_L'
+                ],
+                'PHIND': [
+                    'PHIND', 'XPOR', 'NPHI', 'PHIN', 'NPHI_HL', 'POROSITY', 'NPOR', 
+                    'CNC', 'CNLS', 'HNPHI', 'NPOR_SAN', 'NPOR_LIM', 'PHIN_L', 'XPOR_LS'
+                ],
+                'PE': [
+                    'PE', 'PDPE', 'PEF', 'DEN_COR', 'PEFZ', 'PECO', 'PFE', 
+                    'PEF_SLB', 'PEFZ_EDTC', 'PDPE_L'
+                ]
+            }
+            
+            required_curves = ['GR', 'ILD_log10', 'DeltaPHI', 'PHIND', 'PE']
+            mapped_columns = {}
+            auto_mapped_log = []
 
-    # 3. Dynamically configure subplots based on the user's sidebar selection
-    if show_advanced:
-        fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 10), sharey=True)
-        facies_track_idx = 4
-    else:
-        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(11, 8), sharey=True)
-        facies_track_idx = 2
+            # Auto-Detection Logic
+            for curve in required_curves:
+                detected_column = None
+                for col in df_las.columns:
+                    if col.upper().strip() in [alias.upper() for alias in curve_aliases[curve]]:
+                        detected_column = col
+                        break
+                
+                mapped_columns[curve] = detected_column if detected_column else df_las.columns[0]
+                if detected_column:
+                    auto_mapped_log.append(f"{curve} → {detected_column}")
 
-    # Invert Y-axis globally on the first track so depth values increase downward
-    ax[0].invert_yaxis()
-    
-    # Track 1: Gamma Ray (Standard)
-    ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', lw=1.0)
-    ax[0].set_title("Gamma Ray (GR)")
-    ax[0].set_xlabel("API")
-    ax[0].grid(True, linestyle=':', alpha=0.5)
-    
-    # Track 2: Deep Resistivity (Standard)
-    ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', lw=1.0)
-    ax[1].set_title("Resistivity (ILD)")
-    ax[1].set_xlabel("Log10 Ohmm")
-    ax[1].grid(True, linestyle=':', alpha=0.5)
+            # Display notification banner per tab workspace
+            if len(auto_mapped_log) == len(required_curves):
+                st.info(f"**Auto-mapped all curves successfully for this well:** {', '.join(auto_mapped_log)}")
+            else:
+                st.warning("⚠️ Some curves could not be automatically matched. Please verify mappings below.")
 
-    # 4. Inject extra engineering tracks matching your friend's app if active
-    if show_advanced:
-        nm_m_data = df_las['NM_M'] if 'NM_M' in df_las.columns else np.ones(len(df_proc))
-        relpos_data = df_las['RELPOS'] if 'RELPOS' in df_las.columns else np.linspace(0, 1, len(df_proc))
-        
-        # Track 3: Marine vs Non-Marine block line
-        ax[2].plot(nm_m_data, df_proc['Depth'], color='purple', lw=1.5)
-        ax[2].set_title("Marine Block (NM_M)")
-        ax[2].set_xlabel("Code")
-        ax[2].grid(True, linestyle=':', alpha=0.5)
-        
-        # Track 4: Relative Position index slope
-        ax[3].plot(relpos_data, df_proc['Depth'], color='brown', lw=1.0)
-        ax[3].set_title("Rel Position (RELPOS)")
-        ax[3].set_xlabel("Slope Index")
-        ax[3].grid(True, linestyle=':', alpha=0.5)
+            # Collapsible mapping editor with unique keys per well instance
+            with st.expander(f"Advanced Curve Mapping Overrides ({uploaded_file.name})"):
+                st.write("If the auto-detection missed a curve, correct it manually here:")
+                col_selectors = st.columns(len(required_curves))
+                for idx, curve in enumerate(required_curves):
+                    with col_selectors[idx]:
+                        current_default = mapped_columns[curve]
+                        default_idx = df_las.columns.get_loc(current_default) if current_default in df_las.columns else 0
+                        mapped_columns[curve] = st.selectbox(
+                            f"{curve}:", df_las.columns, index=default_idx, key=f"select-{curve}-{uploaded_file.name}"
+                        )
+                    
+            # Handle metadata targets fallback configurations
+            if 'NM_M' not in df_las.columns:
+                df_las['NM_M'] = 1  
+            if 'RELPOS' not in df_las.columns:
+                df_las['RELPOS'] = 0.5  
+                
+            # Missing Tool Alert Indicators
+            for curve, mapped_col in mapped_columns.items():
+                if mapped_col in ['Depth', 'DEPT']:
+                    st.warning(f"⚠️ Missing Tool: This file does not contain a {curve} log array. Falling back to background averages.")
 
-    # Final Track: Your clean multi-colored structural Facies Strip
-    pred_strip = np.repeat(df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
-    ax[facies_track_idx].imshow(pred_strip, cmap=cmap_facies, aspect='auto', 
-                                extent=[0, 20, df_proc['Depth'].max(), df_proc['Depth'].min()], vmin=1, vmax=9)
-    ax[facies_track_idx].set_title("Predicted Facies")
-    ax[facies_track_idx].set_xticks([])
+            # Preprocessing Pipeline Configuration
+            df_proc = pd.DataFrame()
+            df_proc['Depth'] = df_las['Depth']
+            
+            for curve in required_curves:
+                raw_series = pd.to_numeric(df_las[mapped_columns[curve]], errors='coerce')
+                df_proc[curve] = raw_series
+                
+            # Automatic Resistivity Log Transformation Safeguard
+            if df_proc['ILD_log10'].median() > 5.0:
+                df_proc['ILD_log10'] = np.log10(df_proc['ILD_log10'].clip(lower=0.001))
 
-    plt.tight_layout()
-    st.pyplot(fig)
+            df_proc['NM_M'] = df_las['NM_M'] if 'NM_M' in df_las.columns else 1
+            df_proc['RELPOS'] = df_las['RELPOS'] if 'RELPOS' in df_las.columns else 0.5
+            
+            # Null values median fill routine
+            for col in required_curves:
+                df_proc[col] = df_proc[col].fillna(df_proc[col].median())
+                
+            df_proc['GR_PHIND_ratio'] = df_proc['GR'] / (df_proc['PHIND'] + 0.001)
+            df_proc.replace([np.inf, -np.inf], np.nan, inplace=True)
+            df_proc['GR_PHIND_ratio'] = df_proc['GR_PHIND_ratio'].fillna(df_proc['GR_PHIND_ratio'].median())
 
-    # Download predictions as csv
-    st.markdown("---")
-    st.write("### Export Interpretation Results")
-    st.write("Download the processed well log data along with your model's continuous facies predictions as a standard CSV spreadsheet.")
+            # Generate rolling feature extensions
+            for curve in required_curves:
+                df_proc[f'{curve}_roll_mean'] = df_proc[curve].rolling(window=3, min_periods=1).mean()
+                df_proc[f'{curve}_roll_std'] = df_proc[curve].rolling(window=3, min_periods=1).std().fillna(0)
 
-    @st.cache_data
-    def convert_df_to_csv(df):
-        return df.to_csv(index=False).encode('utf-8')
+            features_ordered = [
+                'GR', 'ILD_log10', 'DeltaPHI', 'PHIND', 'PE', 'NM_M', 'RELPOS',
+                'GR_PHIND_ratio', 'GR_roll_mean', 'GR_roll_std', 'ILD_log10_roll_mean',
+                'ILD_log10_roll_std', 'DeltaPHI_roll_mean', 'DeltaPHI_roll_std',
+                'PHIND_roll_mean', 'PHIND_roll_std', 'PE_roll_mean', 'PE_roll_std'
+            ]
+            
+            X_live_raw = df_proc[features_ordered]
+            X_live_scaled = scaler.transform(X_live_raw)
+            
+            # Central Matrix Execution Router Logic
+            if selected_model == "Random Forest Baseline":
+                df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
+                
+            elif selected_model == "XGBoost Classifier":
+                if xgb_model is not None:
+                    df_proc['Predicted_Facies'] = xgb_model.predict(X_live_scaled)
+                else:
+                    st.error("⚠️ XGBoost model file ('best_baseline_xgb.joblib') not found. Defaulting to Random Forest.")
+                    df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
+                    
+            elif selected_model == "Sequential 1D-CNN Architecture":
+                if cnn_model is not None:
+                    try:
+                        X_live_seq = create_live_sequences(X_live_scaled, window_size=5)
+                        cnn_probs = cnn_model.predict(X_live_seq)
+                        df_proc['Predicted_Facies'] = np.argmax(cnn_probs, axis=1) + 1
+                    except Exception as e:
+                        st.error(f"⚠️ 1D-CNN Sequence execution error: {e}. Defaulting to Random Forest.")
+                        df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
+                else:
+                    st.error("⚠️ Deep Learning asset ('best_1d_cnn.h5') not found. Defaulting to Random Forest.")
+                    df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
+                    
+            # Automated Performance Scorecard Engine
+            if 'FACIES' in df_las.columns:
+                st.markdown("---")
+                st.write("### Automated AI Performance Scorecard")
+                
+                true_labels = df_las['FACIES'].fillna(-1).astype(int)
+                valid_idx = true_labels != -1
+                
+                if valid_idx.sum() > 0:
+                    acc = accuracy_score(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx])
+                    
+                    m1, m2 = st.columns(2)
+                    with m1:
+                        st.metric(label="Overall Model Alignment Accuracy", value=f"{acc:.1%}")
+                    with m2:
+                        st.metric(label="Validated Depth Samples Evaluated", value=f"{valid_idx.sum()} intervals")
+                        
+                    with st.expander("View Detailed Granular Precision Report"):
+                        report = classification_report(true_labels[valid_idx], df_proc['Predicted_Facies'][valid_idx], output_dict=False)
+                        st.code(report)
 
-    csv_bytes = convert_df_to_csv(df_proc)
+            # Dynamic Log Plotting Subplots Canvas
+            st.subheader("Machine Learning Log Interpretation Log Strip")
+            
+            facies_colors = ['#F4D03F', '#F5B041', '#DC7633', '#A11D33', '#1B4F72', '#2E4053', '#7D6608', '#117A65', '#145A32']
+            cmap_facies = colors.ListedColormap(facies_colors, 'indexed')
 
-    st.download_button(
-        label=" Download Facies Predictions (.csv)",
-        data=csv_bytes,
-        file_name=f"Facies_Predictions_{uploaded_file.name.replace('.las', '')}.csv",
-        mime="text/csv",
-        key='download-csv'
-    )
+            if show_advanced:
+                fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 10), sharey=True)
+                facies_track_idx = 4
+            else:
+                fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(11, 8), sharey=True)
+                facies_track_idx = 2
 
-    # Interactive Geological Crossplot
-    st.markdown("---")
-    st.write("###  Interactive Facies Crossplot Clustering")
-    st.write("Hover over any data point to inspect its exact logging metrics and depth location in real time.")
+            ax[0].invert_yaxis()
+            
+            # Track 1: Gamma Ray
+            ax[0].plot(df_proc['GR'], df_proc['Depth'], color='black', lw=1.0)
+            ax[0].set_title("Gamma Ray (GR)")
+            ax[0].set_xlabel("API")
+            ax[0].grid(True, linestyle=':', alpha=0.5)
+            
+            # Track 2: Resistivity
+            ax[1].plot(df_proc['ILD_log10'], df_proc['Depth'], color='blue', lw=1.0)
+            ax[1].set_title("Resistivity (ILD)")
+            ax[1].set_xlabel("Log10 Ohmm")
+            ax[1].grid(True, linestyle=':', alpha=0.5)
 
-    import plotly.express as px
+            # Extended Engineering Geologic Track Views
+            if show_advanced:
+                nm_m_data = df_las['NM_M'] if 'NM_M' in df_las.columns else np.ones(len(df_proc))
+                relpos_data = df_las['RELPOS'] if 'RELPOS' in df_las.columns else np.linspace(0, 1, len(df_proc))
+                
+                ax[2].plot(nm_m_data, df_proc['Depth'], color='purple', lw=1.5)
+                ax[2].set_title("Marine Block (NM_M)")
+                ax[2].set_xlabel("Code")
+                ax[2].grid(True, linestyle=':', alpha=0.5)
+                
+                ax[3].plot(relpos_data, df_proc['Depth'], color='brown', lw=1.0)
+                ax[3].set_title("Rel Position (RELPOS)")
+                ax[3].set_xlabel("Slope Index")
+                ax[3].grid(True, linestyle=':', alpha=0.5)
 
-    # Create a descriptive text column specifically for the interactive hover popup box
-    df_proc['Hover_Text'] = (
-        "Depth: " + df_proc['Depth'].astype(str) + " ft<br>" +
-        "Gamma Ray: " + df_proc['GR'].round(1).astype(str) + " API<br>" +
-        "Resistivity: " + df_proc['ILD_log10'].round(2).astype(str) + " Log10"
-    )
+            # Final Track: Predicted Facies Colored Strip
+            pred_strip = np.repeat(df_proc['Predicted_Facies'].values, 100).reshape(-1, 100)
+            ax[facies_track_idx].imshow(
+                pred_strip, cmap=cmap_facies, aspect='auto', 
+                extent=[0, 20, df_proc['Depth'].max(), df_proc['Depth'].min()], vmin=1, vmax=9
+            )
+            ax[facies_track_idx].set_title("Predicted Facies")
+            ax[facies_track_idx].set_xticks([])
 
-    # Build the interactive dynamic scatter plot engine
-    fig_cross = px.scatter(
-        df_proc,
-        x='GR',
-        y='ILD_log10',
-        color='Predicted_Facies',
-        hover_name='Hover_Text',
-        color_continuous_scale=facies_colors,
-        range_color=[1, 9],
-        labels={'GR': 'Gamma Ray (API)', 'ILD_log10': 'Resistivity (Log10 Ohmm)'},
-        title="Interactive Decision Domains: GR vs. Resistivity"
-    )
+            plt.tight_layout()
+            st.pyplot(fig)
 
-    # Clean up layout dimensions and structure
-    #  PASTE THIS CRISP WHITE BACKGROUND LAYOUT HERE:
-    fig_cross.update_layout(
-        template='plotly_white',          
-        plot_bgcolor='white',             
-        paper_bgcolor='white',            
-        font=dict(color='black'),         
-        coloraxis_colorbar=dict(
-            title="Facies ID", 
-            tickvals=list(range(1, 10)),
-            title_font=dict(color='black'),
-            tickfont=dict(color='black')
-        ),
-        xaxis=dict(
-            gridcolor='rgba(200,200,200,0.5)',
-            linecolor='black',                 
-            title_font=dict(color='black'),
-            tickfont=dict(color='black')
-        ),
-        yaxis=dict(
-            gridcolor='rgba(200,200,200,0.5)', 
-            linecolor='black',
-            title_font=dict(color='black'),
-            tickfont=dict(color='black')
-        )
-    )
+            # Export Pipeline Metrics Engine
+            st.markdown("---")
+            st.write("### Export Interpretation Results")
+            st.write("Download the fully annotated well logs containing continuous facies layer predictions.")
 
-    # Render natively in Streamlit
-    st.plotly_chart(fig_cross, use_container_width=True)
+            @st.cache_data
+            def convert_df_to_csv(df):
+                return df.to_csv(index=False).encode('utf-8')
+
+            csv_bytes = convert_df_to_csv(df_proc)
+
+            st.download_button(
+                label=" Download Facies Predictions (.csv)",
+                data=csv_bytes,
+                file_name=f"Facies_Predictions_{uploaded_file.name.replace('.las', '')}.csv",
+                mime="text/csv",
+                key=f"download-csv-{uploaded_file.name}"
+            )
+
+            # Interactive Plotly Domain Clustering Scatter Matrix
+            st.markdown("---")
+            st.write("### Interactive Facies Crossplot Clustering")
+            
+            df_proc['Hover_Text'] = (
+                "Depth: " + df_proc['Depth'].astype(str) + " ft<br>" +
+                "Gamma Ray: " + df_proc['GR'].round(1).astype(str) + " API<br>" +
+                "Resistivity: " + df_proc['ILD_log10'].round(2).astype(str) + " Log10"
+            )
+
+            fig_cross = px.scatter(
+                df_proc, x='GR', y='ILD_log10', color='Predicted_Facies',
+                hover_name='Hover_Text', color_continuous_scale=facies_colors, range_color=[1, 9],
+                labels={'GR': 'Gamma Ray (API)', 'ILD_log10': 'Resistivity (Log10 Ohmm)'},
+                title=f"Decision Domains: GR vs. Resistivity - Well: {uploaded_file.name}"
+            )
+
+            fig_cross.update_layout(
+                template='plotly_white', plot_bgcolor='white', paper_bgcolor='white', font=dict(color='black'),
+                coloraxis_colorbar=dict(title="Facies ID", tickvals=list(range(1, 10)), title_font=dict(color='black'), tickfont=dict(color='black')),
+                xaxis=dict(gridcolor='rgba(200,200,200,0.5)', linecolor='black', title_font=dict(color='black'), tickfont=dict(color='black')),
+                yaxis=dict(gridcolor='rgba(200,200,200,0.5)', linecolor='black', title_font=dict(color='black'), tickfont=dict(color='black'))
+            )
+
+            st.plotly_chart(fig_cross, use_container_width=True, key=f"plotly-{uploaded_file.name}")
+            
+    st.
