@@ -22,7 +22,7 @@ st.markdown("""
     [data-testid="stSidebar"] * { color: #c9d8e8 !important; }
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 { color: #5ab4d6 !important; }
-    h1 { color: #1a3a52 !important; letter-spacing: -0.5px; }
+    h1 { color:white !important; letter-spacing: -0.5px; }
     [data-testid="metric-container"] {
         background: #f0f6fb;
         border: 1px solid #c5dde8;
