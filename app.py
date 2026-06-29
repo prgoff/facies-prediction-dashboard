@@ -32,7 +32,7 @@ st.markdown("""
     .section-header {
         font-size: 1.05rem;
         font-weight: 600;
-        color: #1a3a52;
+        color: white;
         border-left: 4px solid #5ab4d6;
         padding-left: 10px;
         margin: 1.5rem 0 0.75rem 0;
