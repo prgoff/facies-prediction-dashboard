@@ -30,6 +30,21 @@ def load_all_models():
 
 scaler, rf_model, xgb_model, cnn_model = load_all_models()
 
+def create_live_sequences(scaled_data, window_size=5):
+    """
+    Transforms a 2D feature matrix into consecutive 3D rolling windows 
+    for 1D-CNN sequential tracking. Uses edge padding to preserve exact row count.
+    """
+    half_w = window_size // 2
+    padded = np.pad(scaled_data, ((half_w, half_w), (0, 0)), mode='edge')
+    
+    sequences = []
+    for i in range(len(scaled_data)):
+        window = padded[i : i + window_size, :]
+        sequences.append(window)
+        
+    return np.array(sequences)
+
 # App User Interface
 st.title("Subsurface Facies Prediction Dashboard")
 st.markdown("Upload a standard `.las` well log file to generate automated machine learning lithofacies classifications.")
@@ -184,13 +199,23 @@ if uploaded_file is not None:
             
     elif selected_model == "Sequential 1D-CNN Architecture":
         try:
-            cnn_engine = joblib.load('best_1d_cnn.joblib')
-            df_proc['Predicted_Facies'] = cnn_engine.predict(X_live_scaled)
-        except Exception:
-            st.sidebar.warning("⚠️ 1D-CNN asset not found in repo yet. Falling back to Random Forest.")
-            # Changed fallback from 'model' to 'rf_model'
+            # Load the native deep learning model matrix architecture
+            from tensorflow.keras.models import load_model
+            cnn_engine = load_model('best_1d_cnn.h5')
+            
+            # 1. Transform the 2D scaled live frame into a 3D tensor sequence block
+            X_live_seq = create_live_sequences(X_live_scaled, window_size=5)
+            
+            # 2. Run sequential categorical inference
+            cnn_probs = cnn_engine.predict(X_live_seq)
+            
+            # 3. Extract highest probability class and map it back from 0-8 to 1-9 scales
+            df_proc['Predicted_Facies'] = np.argmax(cnn_probs, axis=1) + 1
+            
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ 1D-CNN asset not found or architecture error: {e}. Falling back to Random Forest.")
             df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
-
+            
     # Automated AI evaluation scorecard
     # Check if the uploaded file contains original geological core descriptions to test against
     if 'FACIES' in df_las.columns:
