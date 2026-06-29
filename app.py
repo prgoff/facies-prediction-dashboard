@@ -168,27 +168,28 @@ if uploaded_file is not None:
     # Scale and Prepare Live Tensors
     X_live_scaled = scaler.transform(X_live_raw)
     
-    # Dynamic Model Selector Routing Logic
+    # Dyanmic Model Selector Routing
     if selected_model == "Random Forest Baseline":
-        df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+        # Changed 'model' to 'rf_model' to match your loading configuration
+        df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
         
     elif selected_model == "XGBoost Classifier":
         try:
-            # Looks for your secondary XGBoost pipeline asset file
             xgb_engine = joblib.load('best_baseline_xgb.joblib')
             df_proc['Predicted_Facies'] = xgb_engine.predict(X_live_scaled)
         except Exception:
             st.sidebar.warning("⚠️ XGBoost asset not found in repo yet. Falling back to Random Forest.")
-            df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+            # Changed fallback from 'model' to 'rf_model'
+            df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
             
     elif selected_model == "Sequential 1D-CNN Architecture":
         try:
-            # Looks for your deep learning model file matrix layout
             cnn_engine = joblib.load('best_1d_cnn.joblib')
             df_proc['Predicted_Facies'] = cnn_engine.predict(X_live_scaled)
         except Exception:
             st.sidebar.warning("⚠️ 1D-CNN asset not found in repo yet. Falling back to Random Forest.")
-            df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+            # Changed fallback from 'model' to 'rf_model'
+            df_proc['Predicted_Facies'] = rf_model.predict(X_live_scaled)
 
     # Automated AI evaluation scorecard
     # Check if the uploaded file contains original geological core descriptions to test against
