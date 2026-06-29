@@ -11,7 +11,6 @@ import plotly.express as px
 
 st.set_page_config(
     page_title="Facies Predictor",
-    page_icon="🪨",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -275,10 +274,10 @@ def render_log_strip(df: pd.DataFrame, df_las: pd.DataFrame, show_advanced: bool
 
 # SIDEBAR
 with st.sidebar:
-    st.markdown("## ⚙️ Controls")
+    st.markdown("## Controls")
     st.markdown("---")
 
-    st.markdown("### 🧠 Model")
+    st.markdown("### Model")
     available_models = ["Random Forest"]
     if xgb_model  is not None: available_models.append("XGBoost")
     if cnn_model  is not None: available_models.append("1D-CNN")
@@ -286,11 +285,11 @@ with st.sidebar:
     selected_model = st.selectbox("Interpretation engine", available_models)
 
     st.markdown("---")
-    st.markdown("### 📐 Display")
+    st.markdown("###  Display")
     show_advanced = st.checkbox("Show advanced tracks (PHIND, NM_M, RELPOS)", value=False)
 
     st.markdown("---")
-    st.markdown("### ℹ️ Model status")
+    st.markdown("###  Model status")
     st.markdown(
         f"{'✅' if True         else '❌'} Random Forest\n\n"
         f"{'✅' if xgb_model    else '⬜'} XGBoost\n\n"
@@ -300,7 +299,7 @@ with st.sidebar:
 
 
 # MAIN AREA
-st.title("🪨 Subsurface Facies Prediction")
+st.title("Subsurface Facies Prediction")
 st.caption(
     "Upload standard `.las` well log files to generate automated machine-learning "
     "lithofacies classifications across all loaded wells."
@@ -314,7 +313,7 @@ uploaded_files = st.file_uploader(
 )
 
 if not uploaded_files:
-    st.info("👆  Upload at least one `.las` file to begin.", icon="📂")
+    st.info("Upload at least one `.las` file to begin.")
     st.stop()
 
 # Process each uploaded well 
@@ -334,7 +333,7 @@ for uploaded_file in uploaded_files:
         continue
 
     # Show LAS header metadata
-    with st.expander("📋 Well header metadata"):
+    with st.expander(" Well header metadata"):
         header_rows = []
         for item in las.well:
             header_rows.append({"Mnemonic": item.mnemonic, "Unit": item.unit, "Value": item.value, "Description": item.descr})
@@ -382,7 +381,7 @@ for uploaded_file in uploaded_files:
 
     # Depth range filter
     depth_min, depth_max = float(df_proc["Depth"].min()), float(df_proc["Depth"].max())
-    with st.expander("📏 Filter depth range"):
+    with st.expander("Filter depth range"):
         d_lo, d_hi = st.slider(
             "Depth interval to predict",
             min_value=depth_min, max_value=depth_max,
