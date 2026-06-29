@@ -7,4 +7,5 @@ joblib
 matplotlib
 xgboost
 plotly
-tensorflow
+tensorflow-cpu
+
