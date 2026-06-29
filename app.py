@@ -49,7 +49,7 @@ def create_live_sequences(scaled_data, window_size=5):
 st.title("Subsurface Facies Prediction Dashboard")
 st.markdown("Upload a standard `.las` well log file to generate automated machine learning lithofacies classifications.")
 
-uploaded_file = st.file_uploader("Choose a LAS file", type=['las'])
+uploaded_files = st.file_uploader("Upload one or multiple well log (.las) files", type=["las"], accept_multiple_files=True)
 
 if uploaded_file is not None:
     # Read LAS file from memory buffer
