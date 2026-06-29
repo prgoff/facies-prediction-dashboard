@@ -10,21 +10,25 @@ import matplotlib.colors as colors
 st.set_page_config(page_title="Facies Predictor", layout="wide")
 
 # Load trained pipeline assets
-
-
 @st.cache_resource
-def load_pipeline():
+def load_all_models():
     scaler = joblib.load('scaler.joblib')
-    model = joblib.load('best_baseline_rf.joblib')
-    return scaler, model
+    rf_model = joblib.load('best_baseline_rf.joblib')
+    
+    # Safely load optional models as you complete training phases
+    try:
+        xgb_model = joblib.load('best_baseline_xgb.joblib')
+    except Exception:
+        xgb_model = None
+        
+    try:
+        cnn_model = joblib.load('best_1d_cnn.joblib') # Use keras.models.load_model if saved as .h5
+    except Exception:
+        cnn_model = None
+        
+    return scaler, rf_model, xgb_model, cnn_model
 
-
-try:
-    scaler, model = load_pipeline()
-    st.sidebar.success("✓ Model & Scaler loaded successfully!")
-except Exception as e:
-    st.sidebar.error(f"Error loading model files: {e}")
-    st.stop()
+scaler, rf_model, xgb_model, cnn_model = load_all_models()
 
 # App User Interface
 st.title("Subsurface Facies Prediction Dashboard")
@@ -153,9 +157,38 @@ if uploaded_file is not None:
     
     X_live_raw = df_proc[features_ordered]
 
-    # Scale and Predict
+    # Model selection sidebar workspace
+    st.sidebar.markdown("---")
+    st.sidebar.write("### Machine Learning Engine")
+    selected_model = st.sidebar.selectbox(
+        "Choose Interpretation Architecture:",
+        ["Random Forest Baseline", "XGBoost Classifier", "Sequential 1D-CNN Architecture"]
+    )
+
+    # Scale and Prepare Live Tensors
     X_live_scaled = scaler.transform(X_live_raw)
-    df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+    
+    # Dynamic Model Selector Routing Logic
+    if selected_model == "Random Forest Baseline":
+        df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+        
+    elif selected_model == "XGBoost Classifier":
+        try:
+            # Looks for your secondary XGBoost pipeline asset file
+            xgb_engine = joblib.load('best_baseline_xgb.joblib')
+            df_proc['Predicted_Facies'] = xgb_engine.predict(X_live_scaled)
+        except Exception:
+            st.sidebar.warning("⚠️ XGBoost asset not found in repo yet. Falling back to Random Forest.")
+            df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
+            
+    elif selected_model == "Sequential 1D-CNN Architecture":
+        try:
+            # Looks for your deep learning model file matrix layout
+            cnn_engine = joblib.load('best_1d_cnn.joblib')
+            df_proc['Predicted_Facies'] = cnn_engine.predict(X_live_scaled)
+        except Exception:
+            st.sidebar.warning("⚠️ 1D-CNN asset not found in repo yet. Falling back to Random Forest.")
+            df_proc['Predicted_Facies'] = model.predict(X_live_scaled)
 
     # Automated AI evaluation scorecard
     # Check if the uploaded file contains original geological core descriptions to test against
