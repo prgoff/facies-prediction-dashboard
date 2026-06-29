@@ -86,7 +86,7 @@ if uploaded_file is not None:
         st.warning("⚠️ Some curves could not be automatically matched. Please verify mappings below.")
 
     # Hide the dropdown menus inside a clean, collapsible menu
-    with st.expander("⚙️ Advanced Curve Mapping Overrides"):
+    with st.expander("Advanced Curve Mapping Overrides"):
         st.write("If the auto-detection missed a curve, correct it manually here:")
         col_selectors = st.columns(len(required_curves))
         for idx, curve in enumerate(required_curves):
@@ -161,7 +161,7 @@ if uploaded_file is not None:
     # Check if the uploaded file contains original geological core descriptions to test against
     if 'FACIES' in df_las.columns:
         st.markdown("---")
-        st.write("### 🏆 Automated AI Performance Scorecard")
+        st.write("### Automated AI Performance Scorecard")
         
         from sklearn.metrics import accuracy_score, classification_report
         
@@ -291,11 +291,30 @@ if uploaded_file is not None:
     )
 
     # Clean up layout dimensions and structure
+    #  PASTE THIS CRISP WHITE BACKGROUND LAYOUT HERE:
     fig_cross.update_layout(
-        coloraxis_colorbar=dict(title="Facies ID", tickvals=list(range(1, 10))),
-        plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
-        yaxis=dict(gridcolor='rgba(128,128,128,0.2)')
+        template='plotly_white',          
+        plot_bgcolor='white',             
+        paper_bgcolor='white',            
+        font=dict(color='black'),         
+        coloraxis_colorbar=dict(
+            title="Facies ID", 
+            tickvals=list(range(1, 10)),
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
+        ),
+        xaxis=dict(
+            gridcolor='rgba(200,200,200,0.5)',
+            linecolor='black',                 
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
+        ),
+        yaxis=dict(
+            gridcolor='rgba(200,200,200,0.5)', 
+            linecolor='black',
+            title_font=dict(color='black'),
+            tickfont=dict(color='black')
+        )
     )
 
     # Render natively in Streamlit
