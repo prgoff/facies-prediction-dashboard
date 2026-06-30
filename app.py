@@ -58,11 +58,30 @@ FACIES_COLORS = [FACIES_INFO[i]["color"] for i in range(1, 10)]
 CMAP_FACIES   = mcolors.ListedColormap(FACIES_COLORS, "indexed")
 
 CURVE_ALIASES = {
-    "GR":        ["GR", "GGCE", "GR_ED", "GAM", "CGR", "SGR", "GRD"],
-    "ILD_log10": ["ILD_LOG10", "RTAO", "ILD", "LL3", "RT", "AHT90", "AT90", "RILD"],
-    "DeltaPHI":  ["DELTAPHI", "DPHI", "DPOR", "DEPT_PHI", "DPHI_NPHI"],
-    "PHIND":     ["PHIND", "XPOR", "NPHI", "PHIN", "NPHI_HL", "POROSITY"],
-    "PE":        ["PE", "PDPE", "PEF", "DEN_COR"],
+    "GR": [
+        "GR", "GGCE", "GR_ED", "GAM", "CGR", "SGR", "GRD", "GR_S", 
+        "ECGR", "NGAM", "HGR", "EDTC_GR", "GRS", "GRMAIN", "GGR", "GAMMA",
+        "NGR", "RGR", "GR_NNC", "GMA"
+    ],
+    "ILD_log10": [
+        "ILD_LOG10", "RTAO", "ILD", "LL3", "RT", "AHT90", "AT90", "RILD", 
+        "RLA5", "RD", "RDEEP", "RESDEEP", "HILD", "RT90", "M2R9", "HDIL",
+        "LLD", "AHTD", "ATD", "M2R6", "RLA4", "M2R3", "RES", "RESD"
+    ],
+    "DeltaPHI": [
+        "DELTAPHI", "DPHI", "DPOR", "DEPT_PHI", "DPHI_NPHI", "DPH", 
+        "DPHZ", "POR_DENS", "DPOR_SAN", "DPOR_LIM", "DPHZ_L", "DPHI_LS", 
+        "DPHI_SS", "DPHI_DOL", "DPH_LS", "DPH_SS", "DPOR_LS"
+    ],
+    "PHIND": [
+        "PHIND", "XPOR", "NPHI", "PHIN", "NPHI_HL", "POROSITY", "NPOR", 
+        "CNC", "CNLS", "HNPHI", "NPOR_SAN", "NPOR_LIM", "PHIN_L", "XPOR_LS",
+        "NPHI_LS", "NPHI_SS", "NPHI_DOL", "TNPH", "NPHZ", "NPHZ_L"
+    ],
+    "PE": [
+        "PE", "PDPE", "PEF", "DEN_COR", "PEFZ", "PECO", "PFE", 
+        "PEF_SLB", "PEFZ_EDTC", "PDPE_L", "PE_B", "PEFZ_H", "EDTC_PEFZ"
+    ]
 }
 REQUIRED_CURVES = list(CURVE_ALIASES.keys())
 
